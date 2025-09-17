@@ -1,33 +1,25 @@
 from __future__ import annotations
 
-import json
-import tempfile
+import os
+import pytest
 
 from src.mission.qgc_plan_loader import load_qgc_plan
 
 
-def test_load_qgc_plan_basic():
-    plan = {
-        "mission": {
-            "items": [
-                {
-                    "command": 16,
-                    "coordinate": [10.0, 20.0, 30.0],
-                    "param1": 2.0,
-                    "param2": 1.5,
-                },
-                {"command": 22},  # ignored
-                {
-                    "command": 16,
-                    "params": [0, 0, 0, 0, 11.0, 21.0, 31.0],
-                },
-            ]
-        }
-    }
-    with tempfile.NamedTemporaryFile("w+", suffix=".plan") as f:
-        json.dump(plan, f)
-        f.flush()
-        wps = load_qgc_plan(f.name)
-    assert len(wps) == 2
-    assert wps[0].lat == 10.0 and wps[0].lon == 20.0 and wps[0].alt == 30.0
-    assert wps[1].lat == 11.0 and wps[1].lon == 21.0 and wps[1].alt == 31.0
+def test_load_qgc_plan_from_file():
+    # Load the real QGC plan bundled with the tests
+    plan_path = os.path.join(os.path.dirname(__file__), "test.plan")
+    wps = load_qgc_plan(plan_path)
+
+    # The plan contains 15 NAV_WAYPOINT (command 16) items and one LAND (ignored)
+    assert len(wps) == 15
+
+    # Validate first waypoint (from test.plan)
+    assert wps[0].lat == pytest.approx(-33.5319069)
+    assert wps[0].lon == pytest.approx(-70.76592362)
+    assert wps[0].alt == pytest.approx(0.0)
+
+    # Validate last waypoint (15th NAV_WAYPOINT before LAND)
+    assert wps[-1].lat == pytest.approx(-33.53191652)
+    assert wps[-1].lon == pytest.approx(-70.76576827)
+    assert wps[-1].alt == pytest.approx(0.0)
