@@ -1,0 +1,12 @@
+imu:
+    type: dummy # options: dummy|pi
+
+gps:
+    type: dummy # options: dummy|serial
+    port: /dev/ttyUSB0
+    baudrate: 115200
+
+lidar:
+    type: dummy # options: dummy|rplidar
+    port: /dev/ttyUSB0
+    baudrate: 115200

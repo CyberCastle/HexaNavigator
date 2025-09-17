@@ -1,0 +1,12 @@
+# Navigation defaults
+lookahead_m: 0.6
+safety_radius_m: 0.4
+nav_rate_hz: 10
+vel_min: 0.05
+vel_max: 0.20
+heading_deadband_deg: 10
+turn_rate_max_dps: 45
+
+rpc:
+    base_url: http://localhost:8000
+    timeout_s: 2.0
