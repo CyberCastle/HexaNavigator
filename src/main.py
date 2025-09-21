@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import time
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,7 +19,7 @@ from .utils.geo import lla_to_enu
 from .sensors.imu import Imu, DummyImu
 from .sensors.gps import Gps, DummyGps
 from .sensors.lidar import Lidar, DummyLidar
-from .robot.rpc_client import HttpRpcRobotAPI
+from .robot.rpc_client import UartRobotAPI
 from .core.state_machine import Navigator
 
 
@@ -87,9 +88,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     runp.add_argument("--plan", required=True, help="Path to QGC .plan or .waypoints file")
     runp.add_argument("--speed", type=float, default=None, help="Target speed m/s")
     runp.add_argument("--gait", type=str, default=None, help="Gait name (e.g., tripod)")
-    runp.add_argument(
-        "--rpc-url", type=str, default=os.getenv("RPC_BASE_URL", "http://localhost:8000")
-    )
+    # UART parameters
+    runp.add_argument("--serial-port", type=str, default=os.getenv("SERIAL_PORT", None))
+    runp.add_argument("--baudrate", type=int, default=int(os.getenv("BAUDRATE", "115200")))
     runp.add_argument("--log-level", type=str, default=os.getenv("LOG_LEVEL", "INFO"))
     runp.add_argument("--config", type=str, default=None, help="Path to default.yaml override")
     runp.add_argument("--sensors", type=str, default=None, help="Path to sensors.yaml override")
@@ -100,10 +101,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Load configs
     app_cfg = AppConfig(
-        default_cfg_path=args.config
-        or os.path.join(os.path.dirname(__file__), "config", "default.yaml"),
-        sensors_cfg_path=args.sensors
-        or os.path.join(os.path.dirname(__file__), "config", "sensors.yaml"),
+        default_cfg_path=args.config or os.path.join(os.path.dirname(__file__), "config", "default.yaml"),
+        sensors_cfg_path=args.sensors or os.path.join(os.path.dirname(__file__), "config", "sensors.yaml"),
     )
 
     cfg = load_yaml(app_cfg.default_cfg_path)
@@ -120,9 +119,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Build sensors
     imu, gps, lidar = build_sensors(scfg)
 
-    # Robot API
-    robot = HttpRpcRobotAPI(
-        base_url=args.rpc_url, timeout_s=float(cfg.get("rpc", {}).get("timeout_s", 2.0))
+    # Robot API (UART)
+    robot = UartRobotAPI(
+        port=args.serial_port,
+        baudrate=int(args.baudrate),
+        timeout_s=float(cfg.get("uart", {}).get("timeout_s", 2.0)),
     )
     if args.gait:
         try:

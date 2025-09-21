@@ -7,6 +7,5 @@ vel_max: 0.20
 heading_deadband_deg: 10
 turn_rate_max_dps: 45
 
-rpc:
-    base_url: http://localhost:8000
+uart:
     timeout_s: 2.0

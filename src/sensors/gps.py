@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Protocol, Optional
+from typing import Protocol
 
 from ..core.types import GpsData
 

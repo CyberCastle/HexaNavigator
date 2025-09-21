@@ -5,7 +5,7 @@ Autonomous waypoint navigation for a Raspberry Pi–mounted hexapod robot using 
 -   Mission input: QGC .plan (JSON) and MAVLink plain text .waypoints (optional)
 -   Sensors: IMU, GPS/RTK, LiDAR (camera optional)
 -   Planner: Pure Pursuit + reactive obstacle avoidance (sectorization/VFH-lite)
--   Control: HTTP/JSON-RPC client for hexapod directional API
+-   Control: UART-based RPC (library TBD) for hexapod directional API
 -   State machine: IDLE → NAVIGATING ↔ AVOIDING → COMPLETED/ABORTED/PAUSED
 
 ## Hardware target
@@ -49,34 +49,27 @@ Dependencies you'll likely need to add in your pyproject if missing:
 
 ## Run
 
-Default (dummy sensors), using the root CLI shim:
+Default (dummy sensors), run the app module:
 
 ```bash
-python -m main run --plan mission.plan --speed 0.15 --gait tripod
+python -m src.main run --plan mission.plan --speed 0.15 --gait tripod
 ```
 
-Or using the package module directly:
-
-```bash
-python -m hexapod_autonav.main run --plan mission.plan --speed 0.15 --gait tripod
-```
+Or install the package in editable mode and run the same command.
 
 Configuration:
 
--   Edit `src/hexapod_autonav/config/default.yaml` for navigation parameters.
--   Edit `src/hexapod_autonav/config/sensors.yaml` to select adapters (dummy/real) and ports.
+-   Edit `src/config/default.yaml` for navigation parameters.
+-   Edit `src/config/sensors.yaml` to select adapters (dummy/real) and ports.
 
-## RPC integration
+## RPC integration (UART)
 
-Set the base URL via `--rpc-url` or environment variable `RPC_BASE_URL`. The default `HttpRpcRobotAPI` expects endpoints like:
+RPC will be accessed over UART via a serial library (TBD). The concrete adapter/driver is not defined yet; a `RobotAPI` implementation for UART should be added and wired in when the library is chosen.
 
--   POST /cmd/forward {"speed": 0.15}
--   POST /cmd/turn_left {"rate": 20}
--   POST /cmd/stop {}
--   POST /config/set_velocity {"v": 0.2}
--   POST /config/set_gait {"name": "tripod"}
+-   Configure serial port and baud in `config/sensors.yaml` (to be extended) and/or CLI flags when implemented.
+-   Implement a `UartRobotAPI` alongside the existing interface in `src/robot/` and use it within the controller.
 
-Adapt in `src/hexapod_autonav/robot/rpc_client.py` as needed.
+Note: Previous HTTP/JSON-RPC details have been removed in favor of the UART approach.
 
 ## Extend drivers
 
