@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import math
 import time
+from pathlib import Path
 
 import pytest
 from pymavlink import mavutil  # type: ignore[import]
 
 from core.types import Waypoint  # type: ignore[import]
 from mavlink import MavlinkServer, TelemetrySample  # type: ignore[import]
+
+try:
+    from src.mission.qgc_plan_loader import load_qgc_plan  # type: ignore[import]
+except ImportError:  # pragma: no cover - support editable installs
+    from mission.qgc_plan_loader import load_qgc_plan  # type: ignore[import]
 
 
 class MavlinkGcsClient:
@@ -62,6 +68,52 @@ class MavlinkGcsClient:
             target_component=1,
             count=count,
         )
+
+    def send_mission_request_list(self) -> None:
+        """Ask the server for the current mission (pull workflow)."""
+        try:
+            self._conn.mav.mission_request_list_send(  # type: ignore[attr-defined]
+                target_system=1,
+                target_component=1,
+                mission_type=mavutil.mavlink.MAV_MISSION_TYPE_MISSION,
+            )
+        except TypeError:  # pragma: no cover - MAVLink 1 fallback
+            self._conn.mav.mission_request_list_send(  # type: ignore[attr-defined]
+                target_system=1,
+                target_component=1,
+            )
+
+    def send_mission_request_int(self, *, seq: int) -> None:
+        """Request an individual mission item during a download sequence."""
+        try:
+            self._conn.mav.mission_request_int_send(  # type: ignore[attr-defined]
+                target_system=1,
+                target_component=1,
+                seq=seq,
+                mission_type=mavutil.mavlink.MAV_MISSION_TYPE_MISSION,
+            )
+        except TypeError:  # pragma: no cover - MAVLink 1 fallback
+            self._conn.mav.mission_request_int_send(  # type: ignore[attr-defined]
+                target_system=1,
+                target_component=1,
+                seq=seq,
+            )
+
+    def send_mission_ack(self) -> None:
+        """Acknowledge mission download completion."""
+        try:
+            self._conn.mav.mission_ack_send(  # type: ignore[attr-defined]
+                target_system=1,
+                target_component=1,
+                type=mavutil.mavlink.MAV_MISSION_ACCEPTED,
+                mission_type=mavutil.mavlink.MAV_MISSION_TYPE_MISSION,
+            )
+        except TypeError:  # pragma: no cover - MAVLink 1 fallback
+            self._conn.mav.mission_ack_send(  # type: ignore[attr-defined]
+                target_system=1,
+                target_component=1,
+                type=mavutil.mavlink.MAV_MISSION_ACCEPTED,
+            )
 
     def send_mission_item(self, *, seq: int, waypoint: Waypoint) -> None:
         """Send a single mission item as an integer-based packet (as QGC does)."""
@@ -196,6 +248,98 @@ def test_command_queue_and_telemetry(gcs_identity) -> None:
             attitude = gcs.wait_for("ATTITUDE", timeout=5.0)
             assert attitude is not None
             assert pytest.approx(attitude.yaw, rel=1e-3) == sample.yaw_rad
+        finally:
+            gcs.close()
+    finally:
+        server.stop()
+
+
+def test_mission_download_from_plan_file(gcs_identity) -> None:  # noqa: D401 - simple flow
+    """Verify the server serves missions loaded from a QGC .plan file."""
+
+    plan_path = Path(__file__).with_name("test.plan")
+    waypoints = load_qgc_plan(str(plan_path))
+    assert waypoints, "Plan file should yield at least one waypoint"
+
+    server = MavlinkServer(bind_host="127.0.0.1", bind_port=14662, telemetry_rate_hz=10.0)
+    server.set_mission_waypoints(waypoints)
+    server.start()
+    try:
+        sys_id, comp_id = gcs_identity
+        gcs = MavlinkGcsClient(port=14662, system_id=sys_id, component_id=comp_id)
+        try:
+            gcs.send_heartbeat()
+            time.sleep(0.1)
+
+            gcs.send_mission_request_list()
+            mission_count = gcs.wait_for("MISSION_COUNT", timeout=5.0)
+            assert mission_count is not None
+            assert mission_count.count == len(waypoints)
+
+            received: list[tuple[float, float, float]] = []
+            for seq in range(len(waypoints)):
+                gcs.send_mission_request_int(seq=seq)
+                msg = gcs.wait_for("MISSION_ITEM_INT", timeout=5.0)
+                assert msg is not None
+                lat_raw = getattr(msg, "x", None)
+                lon_raw = getattr(msg, "y", None)
+                alt_raw = getattr(msg, "z", None)
+                assert lat_raw is not None and lon_raw is not None and alt_raw is not None
+                received.append((float(lat_raw) / 1e7, float(lon_raw) / 1e7, float(alt_raw)))
+
+            gcs.send_mission_ack()
+
+            for wp, (lat, lon, alt) in zip(waypoints, received):
+                assert math.isclose(lat, wp.lat, rel_tol=0, abs_tol=1e-7)
+                assert math.isclose(lon, wp.lon, rel_tol=0, abs_tol=1e-7)
+                if wp.alt is not None:
+                    assert math.isclose(alt, wp.alt, rel_tol=0, abs_tol=1e-3)
+        finally:
+            gcs.close()
+    finally:
+        server.stop()
+
+
+def test_mission_upload_from_plan_file(gcs_identity) -> None:
+    """Upload a mission sourced from a QGC .plan file and verify the server stores it."""
+
+    plan_path = Path(__file__).with_name("test.plan")
+    waypoints = load_qgc_plan(str(plan_path))
+    assert waypoints, "Plan file should yield at least one waypoint"
+
+    server = MavlinkServer(bind_host="127.0.0.1", bind_port=14663, telemetry_rate_hz=10.0)
+    server.start()
+    try:
+        sys_id, comp_id = gcs_identity
+        gcs = MavlinkGcsClient(port=14663, system_id=sys_id, component_id=comp_id)
+        try:
+            gcs.send_heartbeat()
+            time.sleep(0.1)
+
+            server.request_mission_upload()
+            req = gcs.wait_for("MISSION_REQUEST_LIST", timeout=5.0)
+            assert req is not None
+
+            gcs.send_mission_count(count=len(waypoints))
+
+            for seq, wp in enumerate(waypoints):
+                gcs.send_mission_item(seq=seq, waypoint=wp)
+                if seq < len(waypoints) - 1:
+                    follow_up = gcs.wait_for("MISSION_REQUEST_INT", timeout=5.0)
+                    assert follow_up is not None
+
+            ack = gcs.wait_for("MISSION_ACK", timeout=5.0)
+            assert ack is not None
+
+            uploaded = server.poll_mission_update(timeout=2.0)
+            assert uploaded is not None
+            assert len(uploaded) == len(waypoints)
+
+            for original, stored in zip(waypoints, uploaded):
+                assert math.isclose(original.lat, stored.lat, rel_tol=0, abs_tol=1e-7)
+                assert math.isclose(original.lon, stored.lon, rel_tol=0, abs_tol=1e-7)
+                if original.alt is not None and stored.alt is not None:
+                    assert math.isclose(original.alt, stored.alt, rel_tol=0, abs_tol=1e-3)
         finally:
             gcs.close()
     finally:
