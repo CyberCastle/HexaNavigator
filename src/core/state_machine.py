@@ -5,12 +5,20 @@ import time
 from enum import Enum
 from typing import Optional, Tuple
 
-from ..core.types import GpsData, ImuData, Waypoint
-from ..utils.geo import lla_to_enu
-from ..sensors.imu import Imu
-from ..sensors.gps import Gps
-from ..sensors.lidar import Lidar, polar_sectorization
-from ..mission.waypoint_manager import WaypointManager
+try:  # pragma: no cover - support top-level imports in tests
+    from ..core.types import GpsData, ImuData, Waypoint
+    from ..utils.geo import lla_to_enu
+    from ..sensors.imu import Imu
+    from ..sensors.gps import Gps
+    from ..sensors.lidar import Lidar, polar_sectorization
+    from ..mission.waypoint_manager import WaypointManager
+except ImportError:  # pragma: no cover - editable installs/test runners
+    from core.types import GpsData, ImuData, Waypoint  # type: ignore[import]
+    from utils.geo import lla_to_enu  # type: ignore[import]
+    from sensors.imu import Imu  # type: ignore[import]
+    from sensors.gps import Gps  # type: ignore[import]
+    from sensors.lidar import Lidar, polar_sectorization  # type: ignore[import]
+    from mission.waypoint_manager import WaypointManager  # type: ignore[import]
 from .controllers import pure_pursuit, avoidance_decision, fuse_and_act, Avoidance
 
 log = logging.getLogger(__name__)
