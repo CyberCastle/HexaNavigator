@@ -8,6 +8,53 @@ Autonomous waypoint navigation for a Raspberry Pi–mounted hexapod robot using 
 -   Control: UART-based RPC (library TBD) for hexapod directional API
 -   State machine: IDLE → NAVIGATING ↔ AVOIDING → COMPLETED/ABORTED/PAUSED
 
+## MAVLink integration
+
+The project ships with a lightweight MAVLink 2 UDP server (`src/mavlink/server.py`) built on top of
+`pymavlink`. It allows QGroundControl (or any GCS) to push missions, issue high-level commands, and
+subscribe to live telemetry while the pure-pursuit navigator runs locally.
+
+Key capabilities
+
+-   Listens on `0.0.0.0:14550` by default (override via `config/default.yaml` → `mavlink` section).
+-   Accepts `MISSION_COUNT`/`MISSION_ITEM_INT` uploads and forwards them to the navigator in real time.
+-   Sends `MISSION_REQUEST[_INT]` and `MISSION_COUNT` replies when the GCS pulls the current plan.
+-   Queues `COMMAND_LONG` messages (e.g. arm/disarm, mission start, RTL) and routes them to the state
+    machine with ACKs.
+-   Publishes telemetry at the configured rate using `GLOBAL_POSITION_INT`, `ATTITUDE`, `GPS_RAW_INT`,
+    and `SYS_STATUS`, populated from the cached sensor readings in the navigator (`TelemetrySample`).
+-   Speaks MAVLink 2 by default, with graceful fallback to MAVLink 1 if a client lacks newer
+    extensions.
+
+Configuration
+
+```yaml
+mavlink:
+		enabled: true
+		bind_host: "0.0.0.0"
+		bind_port: 14550
+		system_id: 1
+		component_id: 1
+		heartbeat_rate_hz: 1.0
+		telemetry_rate_hz: 2.0
+		auto_request_mission: true
+```
+
+You can disable the server (`enabled: false`), change the bind address/port, or adjust heartbeat and
+telemetry rates without modifying code. Command-line overrides can be added later if needed.
+
+Testing
+
+The suite includes integration tests that drive the server using a real UDP client based on
+`pymavlink`:
+
+```bash
+poetry run pytest tests/test_mavlink_server.py -q
+```
+
+These tests validate mission upload handshakes, command acknowledgements, and telemetry broadcast
+end to end.
+
 ## Hardware target
 
 -   Raspberry Pi (Bookworm/Raspberry Pi OS recommended)

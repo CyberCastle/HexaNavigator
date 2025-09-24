@@ -9,7 +9,7 @@ class WaypointManager:
     """Simple waypoint manager that advances when within tolerance."""
 
     def __init__(self, waypoints: List[Waypoint]):
-        self._wps = waypoints
+        self._wps = list(waypoints)
         self._idx = 0
 
     def current(self) -> Optional[Waypoint]:
@@ -18,9 +18,17 @@ class WaypointManager:
     def remaining(self) -> int:
         return max(0, len(self._wps) - self._idx)
 
-    def advance_if_reached(
-        self, pos_enu: Tuple[float, float], tolerance: float | None = None
-    ) -> bool:
+    def waypoints(self) -> List[Waypoint]:
+        return list(self._wps)
+
+    def replace_waypoints(self, waypoints: List[Waypoint]) -> None:
+        self._wps = list(waypoints)
+        self._idx = 0
+
+    def reset(self) -> None:
+        self._idx = 0
+
+    def advance_if_reached(self, pos_enu: Tuple[float, float], tolerance: float | None = None) -> bool:
         wp = self.current()
         if not wp:
             return False

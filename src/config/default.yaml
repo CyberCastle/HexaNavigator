@@ -9,3 +9,13 @@ turn_rate_max_dps: 45
 
 uart:
     timeout_s: 2.0
+
+mavlink:
+    enabled: true
+    bind_host: "0.0.0.0"
+    bind_port: 14550
+    system_id: 1
+    component_id: 1
+    heartbeat_rate_hz: 1.0
+    telemetry_rate_hz: 2.0
+    auto_request_mission: true

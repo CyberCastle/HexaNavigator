@@ -5,7 +5,7 @@ import time
 from enum import Enum
 from typing import Optional, Tuple
 
-from ..core.types import Waypoint
+from ..core.types import GpsData, ImuData, Waypoint
 from ..utils.geo import lla_to_enu
 from ..sensors.imu import Imu
 from ..sensors.gps import Gps
@@ -36,6 +36,9 @@ class Navigator:
         self.state = State.IDLE
         self.home_lla: Optional[tuple[float, float, float]] = None
         self.is_done = False
+        self.last_imu: Optional[ImuData] = None
+        self.last_gps: Optional[GpsData] = None
+        self.last_lidar = None
 
     def tick(self, dt: float) -> None:
         if self.is_done:
@@ -44,6 +47,9 @@ class Navigator:
         imu = self.imu.read()
         gps = self.gps.read()
         scan = self.lidar.read()
+        self.last_imu = imu
+        self.last_gps = gps
+        self.last_lidar = scan
 
         # Initialize home
         if self.home_lla is None and self.gps.has_fix():
@@ -73,13 +79,9 @@ class Navigator:
         curr_e, curr_n, _ = lla_to_enu(self.home_lla, (gps.lat, gps.lon, gps.alt))
 
         path_points = [(e, n)]
-        target_heading, target_speed = pure_pursuit(
-            (curr_e, curr_n), imu.yaw_deg, path_points, float(self.cfg.get("lookahead_m", 0.5))
-        )
+        target_heading, target_speed = pure_pursuit((curr_e, curr_n), imu.yaw_deg, path_points, float(self.cfg.get("lookahead_m", 0.5)))
 
-        sectors = polar_sectorization(
-            scan, safety_radius_m=float(self.cfg.get("safety_radius_m", 0.4))
-        )
+        sectors = polar_sectorization(scan, safety_radius_m=float(self.cfg.get("safety_radius_m", 0.4)))
         decision = avoidance_decision(sectors, float(self.cfg.get("safety_radius_m", 0.4)))
 
         if decision in (Avoidance.TURN_LEFT, Avoidance.TURN_RIGHT, Avoidance.STOP):
@@ -105,3 +107,15 @@ class Navigator:
         self.robot.stop()
         if not self.is_done:
             self.state = State.PAUSED
+
+    def load_mission(self, waypoints: list[Waypoint]) -> None:
+        self.wp_mgr.replace_waypoints(waypoints)
+        self.home_lla = None
+        self.is_done = False
+        self.state = State.IDLE
+        self.robot.stop()
+
+    def resume(self) -> None:
+        if self.wp_mgr.current():
+            self.state = State.NAVIGATING
+            self.is_done = False
